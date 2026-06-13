@@ -3,14 +3,14 @@ import path from "node:path";
 export const VIRTUAL_D1_DATABASES = "vinext:d1";
 export const VIRTUAL_D1_OBJECT_EXPORTS = "virtual:vinext-d1-objects";
 
-export type VinextD1PartitionConfig = "default" | "hostname";
+type VinextD1PartitionConfig = "default" | "hostname";
 
-export type VinextD1WritesConfig = {
+type VinextD1WritesConfig = {
   methods?: readonly string[];
   routes?: readonly string[];
 };
 
-export type VinextD1DatabaseConfig = {
+type VinextD1DatabaseConfig = {
   /**
    * Module containing the database-object implementation. The first runtime
    * slice uses this as the user-facing source of truth and future generated
