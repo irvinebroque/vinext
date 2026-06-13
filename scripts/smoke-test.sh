@@ -34,6 +34,7 @@ done
 # expected-text is a simple string that must appear in the response body.
 CHECKS=(
   "app-router-cloudflare         /       vinext"
+  "app-router-d1-object          /       D1 object example"
   "pages-router-cloudflare       /       vinext"
   "app-router-playground         /       Playground"
   "realworld-api-rest            /       vinext"

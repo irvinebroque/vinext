@@ -258,6 +258,102 @@ For TypeScript types, generate them with `wrangler types` and the `env` import w
 
 > **Note:** You do not need `getPlatformProxy()`, a custom worker entry with `fetch(request, env)`, or any other workaround. `cloudflare:workers` is the recommended way to access bindings in vinext.
 
+#### D1 application objects
+
+For the new D1 application-object model, keep the database code inside a SQLite-backed Durable Object and let vinext generate a route-facing client. Routes, Server Components, and Server Actions import `vinext:d1`; vinext handles the Durable Object namespace, object name, primary routing, and bookmark propagation for the request.
+
+```ts
+// vite.config.ts
+import { cloudflare } from "@cloudflare/vite-plugin";
+import { defineConfig } from "vite";
+import vinext from "vinext";
+
+export default defineConfig({
+  plugins: [
+    vinext({
+      d1: {
+        blog: {
+          source: "./src/db/blog-object",
+          // Optional. Defaults to VINEXT_D1_BLOG for the "blog" database.
+          binding: "VINEXT_D1_BLOG",
+          // Optional. Defaults to one object named "default".
+          partitionBy: "hostname",
+          // Optional. POST/PUT/PATCH/DELETE route primary-only by default.
+          writes: {
+            methods: ["POST", "PUT", "PATCH", "DELETE"],
+            routes: ["/admin/**"],
+          },
+        },
+      },
+    }),
+    cloudflare({
+      viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
+    }),
+  ],
+});
+```
+
+Each `d1` key becomes a property on the default export from `vinext:d1`:
+
+```ts
+// app/api/posts/route.ts
+import d1 from "vinext:d1";
+
+export async function GET() {
+  const posts = await d1.blog.listPosts({ limit: 20 });
+  return Response.json({ posts });
+}
+
+export async function POST(request: Request) {
+  const post = await d1.blog.createPost(await request.json());
+  return Response.json({ post }, { status: 201 });
+}
+```
+
+The generated runtime module also emits named exports for valid JavaScript database keys, but the default export is the most portable TypeScript path today. Use a typed helper when you want object method names and arguments preserved:
+
+```ts
+// src/db/client.ts
+import d1 from "vinext:d1";
+import type { VinextD1DatabaseClient } from "vinext/cloudflare/d1";
+import type { BlogDatabase } from "./blog-object";
+
+export const blog = d1.blog as VinextD1DatabaseClient<BlogDatabase>;
+```
+
+`source` points at the Durable Object module. Vinext re-exports that module from the Worker entry, so a standard `main: "vinext/server/app-router-entry"` Worker can still expose the configured object class to Wrangler:
+
+```jsonc
+{
+  "main": "vinext/server/app-router-entry",
+  "compatibility_flags": ["nodejs_compat", "experimental", "replica_routing"],
+  "durable_objects": {
+    "bindings": [{ "name": "VINEXT_D1_BLOG", "class_name": "BlogDatabase" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["BlogDatabase"] }],
+}
+```
+
+`bookmark` defaults to cookie transport and vinext also sets `x-d1-bookmark` on responses that update it. Set `bookmark: "header"` for API-only flows, or `bookmark: false` if your object adapter owns consistency itself. `rpcMethod` defaults to `runDrizzleObjectMethod`, matching the Drizzle D1 object adapter, but other ORMs can expose the same `{ method, args, bookmark } -> { value, bookmark }` session shape and set `rpcMethod: "runD1ObjectMethod"` or another method name.
+
+**Migrating from old D1 bindings:** replace route-level `env.DB` or `cloudflare:workers` D1 binding calls with methods on a D1 object client. The old model runs SQL from the Worker:
+
+```ts
+import { env } from "cloudflare:workers";
+
+const posts = await env.DB.prepare("SELECT * FROM posts").all();
+```
+
+The D1 object model moves SQL into the Durable Object and keeps app routes framework-native:
+
+```ts
+import d1 from "vinext:d1";
+
+const posts = await d1.blog.listPosts();
+```
+
+See [examples/app-router-d1-object](examples/app-router-d1-object) for a complete working example.
+
 #### Traffic-aware Pre-Rendering (experimental)
 
 TPR queries Cloudflare zone analytics at deploy time to find which pages actually get traffic, pre-renders only those, and uploads them to KV cache. The result is SSG-level latency for popular pages without pre-rendering your entire site.
@@ -402,6 +498,7 @@ These are deployed to Cloudflare Workers and updated on every push to `main`:
 | Hacker News            | HN clone (App Router, RSC)                                                                                       | [hackernews.vinext.workers.dev](https://hackernews.vinext.workers.dev)                           |
 | Nextra Docs            | Nextra docs site (MDX, App Router)                                                                               | [nextra-docs-template.vinext.workers.dev](https://nextra-docs-template.vinext.workers.dev)       |
 | App Router (minimal)   | Minimal App Router on Workers                                                                                    | [app-router-cloudflare.vinext.workers.dev](https://app-router-cloudflare.vinext.workers.dev)     |
+| App Router + D1 object | App Router using `vinext:d1` and a SQLite-backed Durable Object                                                  | [app-router-d1-object.vinext.workers.dev](https://app-router-d1-object.vinext.workers.dev)       |
 | Pages Router (minimal) | Minimal Pages Router on Workers                                                                                  | [pages-router-cloudflare.vinext.workers.dev](https://pages-router-cloudflare.vinext.workers.dev) |
 | RealWorld API          | REST API routes example                                                                                          | [realworld-api-rest.vinext.workers.dev](https://realworld-api-rest.vinext.workers.dev)           |
 | Benchmarks Dashboard   | Build performance tracking over time (D1-backed)                                                                 | [benchmarks.vinext.workers.dev](https://benchmarks.vinext.workers.dev)                           |
