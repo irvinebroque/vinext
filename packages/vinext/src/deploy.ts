@@ -477,6 +477,7 @@ export function generateAppRouterWorkerEntry(): string {
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES, isImageOptimizationPath } from "vinext/server/image-optimization";
 import type { ImageConfig } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
+export * from "vinext/server/app-router-entry";
 
 const imageConfig: ImageConfig = {
   deviceSizes: JSON.parse(
@@ -555,6 +556,8 @@ import { cloneRequestWithHeaders, filterInternalHeaders, isOpenRedirectShaped } 
 import { notFoundStaticAssetResponse } from "vinext/server/http-error-responses";
 import { assetPrefixPathname, isNextStaticPath } from "vinext/utils/asset-prefix";
 import { hasBasePath, stripBasePath } from "vinext/utils/base-path";
+import { applyVinextD1Bookmarks, runWithVinextD1RequestContext } from "vinext/cloudflare/d1";
+export * from "virtual:vinext-d1-objects";
 
 // @ts-expect-error -- virtual module resolved by vinext at build time
 import { renderPage, handleApiRoute, runMiddleware, vinextConfig, matchPageRoute } from "virtual:vinext-server-entry";
@@ -595,6 +598,7 @@ const imageConfig: ImageConfig | undefined = vinextConfig?.images ? {
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    return runWithVinextD1RequestContext({ request, env }, async () => {
     // Pass the Worker \`env\` so binding-backed adapters (e.g. KV) resolve.
     registerConfiguredCacheAdapters(env);
     try {
@@ -704,7 +708,7 @@ export default {
 
       const result = await runPagesRequest(request, deps);
       if (result.type === "response") {
-        return result.response;
+        return applyVinextD1Bookmarks(result.response);
       }
       // Should not reach here for prod/worker (all callbacks supplied).
       return new Response("This page could not be found", { status: 404 });
@@ -713,6 +717,7 @@ export default {
       console.error("[vinext] Worker error:", error);
       return new Response("Internal Server Error", { status: 500 });
     }
+    });
   },
 };
 
