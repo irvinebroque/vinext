@@ -28,6 +28,10 @@ jobs:
             project: app-router-cloudflare
             working_directory: examples/app-router-cloudflare
             wrangler_config: dist/server/wrangler.json
+          - name: app-router-d1-object
+            project: app-router-d1-object
+            working_directory: examples/app-router-d1-object
+            wrangler_config: dist/server/wrangler.json
           - name: pages-router-cloudflare
             project: pages-router-cloudflare
             working_directory: examples/pages-router-cloudflare
@@ -136,6 +140,7 @@ jobs:
 
             const examples = [
               { name: 'app-router-cloudflare', project: 'app-router-cloudflare' },
+              { name: 'app-router-d1-object', project: 'app-router-d1-object' },
               { name: 'pages-router-cloudflare', project: 'pages-router-cloudflare' },
               { name: 'app-router-playground', project: 'app-router-playground', original: 'https://app-router.vercel.app' },
               { name: 'realworld-api-rest', project: 'realworld-api-rest' },

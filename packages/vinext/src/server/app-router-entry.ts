@@ -38,6 +38,9 @@ import {
   notFoundStaticAssetResponse,
 } from "./http-error-responses.js";
 import { assetPrefixPathname, isNextStaticPath } from "../utils/asset-prefix.js";
+import { applyVinextD1Bookmarks, runWithVinextD1RequestContext } from "../cloudflare/d1.js";
+// @ts-expect-error -- virtual module resolved by vinext at build time
+export * from "virtual:vinext-d1-objects";
 
 // Precompute the path components used for `_next/static/*` 404 short-circuit
 // detection. Both `__basePath` and `__assetPrefix` are inlined as
@@ -117,7 +120,14 @@ async function handleRequest(
   // Delegate to RSC handler (which decodes + normalizes the pathname itself),
   // wrapping in the ExecutionContext ALS scope so downstream code can reach
   // ctx.waitUntil() without having ctx threaded through every call site.
-  const handleFn = () => rscHandler(request, ctx);
+  const handleFn = () =>
+    runWithVinextD1RequestContext(
+      { request, env: env as Record<string, unknown> | undefined },
+      async () => {
+        const result = await rscHandler(request, ctx);
+        return result instanceof Response ? applyVinextD1Bookmarks(result) : result;
+      },
+    );
   const result = await (ctx ? runWithExecutionContext(ctx, handleFn) : handleFn());
 
   if (result instanceof Response) {

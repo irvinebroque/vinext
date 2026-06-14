@@ -1,0 +1,25 @@
+{
+  "name": "vinext-app-router-d1-object",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vp dev",
+    "build": "vp build",
+    "preview": "vp preview"
+  },
+  "dependencies": {
+    "@cloudflare/vite-plugin": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "@vitejs/plugin-rsc": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "react-server-dom-webpack": "catalog:",
+    "vinext": "workspace:*",
+    "vite": "catalog:",
+    "wrangler": "catalog:"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

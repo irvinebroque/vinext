@@ -44,6 +44,13 @@ import {
   type VinextCacheConfig,
 } from "./cache/cache-adapters-virtual.js";
 import {
+  VIRTUAL_D1_OBJECT_EXPORTS,
+  VIRTUAL_D1_DATABASES,
+  generateD1ObjectExportsModule,
+  generateD1DatabasesModule,
+  type VinextD1Config,
+} from "./cloudflare/d1-virtual.js";
+import {
   generateBrowserEntry,
   isLinkPrefetchRoute,
   toLinkPrefetchRoute,
@@ -540,6 +547,10 @@ const VIRTUAL_ROOT_PARAMS = "virtual:vinext-root-params";
 const RESOLVED_ROOT_PARAMS = "\0" + VIRTUAL_ROOT_PARAMS;
 /** Virtual module that registers config-driven cache adapters (see VinextOptions.cache). */
 const RESOLVED_CACHE_ADAPTERS = "\0" + VIRTUAL_CACHE_ADAPTERS;
+/** Virtual module exposing config-driven D1 database clients (see VinextOptions.d1). */
+const RESOLVED_D1_DATABASES = "\0" + VIRTUAL_D1_DATABASES;
+/** Virtual module re-exporting config-driven D1 object classes from the Worker entry. */
+const RESOLVED_D1_OBJECT_EXPORTS = "\0" + VIRTUAL_D1_OBJECT_EXPORTS;
 /** Virtual module for composed instrumentation-client bootstrap. */
 const VIRTUAL_INSTRUMENTATION_CLIENT = "private-next-instrumentation-client";
 const RESOLVED_INSTRUMENTATION_CLIENT = `\0${VIRTUAL_INSTRUMENTATION_CLIENT}.mjs`;
@@ -762,6 +773,24 @@ export type VinextOptions = {
    * })
    */
   cache?: VinextCacheConfig;
+  /**
+   * Configure Cloudflare D1 application-object databases. Each key becomes a
+   * database client export from `vinext:d1`; route handlers call methods on that
+   * client while vinext handles Durable Object stubs, object naming, primary
+   * routing, and bookmark propagation.
+   *
+   * @example
+   * vinext({
+   *   d1: {
+   *     blog: {
+   *       source: "./db/blog",
+   *       partitionBy: "hostname",
+   *       writes: { methods: ["POST"], routes: ["/admin/**"] },
+   *     },
+   *   },
+   * })
+   */
+  d1?: VinextD1Config;
   /**
    * Experimental vinext-only feature flags.
    */
@@ -2532,7 +2561,7 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
         // direct @vercel/og imports in metadata routes, and \0-prefixed
         // re-imports from @vitejs/plugin-rsc.
         filter: {
-          id: /(?:next\/|virtual:vinext-|^@vercel\/og(?:\.js)?$)/,
+          id: /(?:next\/|virtual:vinext-|vinext:d1|^@vercel\/og(?:\.js)?$)/,
         },
         handler(id, importer) {
           // Strip \0 prefix if present — @vitejs/plugin-rsc's generated
@@ -2573,6 +2602,20 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
             cleanId.endsWith("\\" + VIRTUAL_CACHE_ADAPTERS)
           ) {
             return RESOLVED_CACHE_ADAPTERS;
+          }
+          if (
+            cleanId === VIRTUAL_D1_DATABASES ||
+            cleanId.endsWith("/" + VIRTUAL_D1_DATABASES) ||
+            cleanId.endsWith("\\" + VIRTUAL_D1_DATABASES)
+          ) {
+            return RESOLVED_D1_DATABASES;
+          }
+          if (
+            cleanId === VIRTUAL_D1_OBJECT_EXPORTS ||
+            cleanId.endsWith("/" + VIRTUAL_D1_OBJECT_EXPORTS) ||
+            cleanId.endsWith("\\" + VIRTUAL_D1_OBJECT_EXPORTS)
+          ) {
+            return RESOLVED_D1_OBJECT_EXPORTS;
           }
           if (cleanId.startsWith(VIRTUAL_GOOGLE_FONTS + "?")) {
             return RESOLVED_VIRTUAL_GOOGLE_FONTS + cleanId.slice(VIRTUAL_GOOGLE_FONTS.length);
@@ -2628,6 +2671,12 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
         }
         if (id === RESOLVED_CLIENT_ENTRY) {
           return await generateClientEntry();
+        }
+        if (id === RESOLVED_D1_DATABASES) {
+          return generateD1DatabasesModule(options.d1);
+        }
+        if (id === RESOLVED_D1_OBJECT_EXPORTS) {
+          return generateD1ObjectExportsModule(options.d1, root);
         }
         // App Router virtual modules
         if (id === RESOLVED_RSC_ENTRY && hasAppDir) {
