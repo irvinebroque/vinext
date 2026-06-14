@@ -27,7 +27,14 @@ type D1ObjectMethodResponse<T = unknown> = {
   bookmark?: string;
 };
 
+type D1ObjectPrimaryStub = {
+  runDrizzleObjectMethod?: (
+    request: D1ObjectMethodRequest,
+  ) => Promise<D1ObjectMethodResponse>;
+};
+
 type D1ObjectState = DurableObjectState & {
+  primaryStub?: D1ObjectPrimaryStub;
   configureReadReplication?: (options: { mode: "auto" | "disabled" }) => Promise<void>;
   storage: DurableObjectStorage & {
     getCurrentBookmark?: () => Promise<string>;
@@ -42,13 +49,18 @@ const RESERVED_METHODS = new Set([
 ]);
 
 export class PostsDatabase extends DurableObject {
+  static readonly primaryMethods = ["createPost"];
+
   declare protected ctx: D1ObjectState;
 
   constructor(ctx: DurableObjectState, env: unknown) {
     super(ctx, env);
 
     ctx.blockConcurrencyWhile(async () => {
-      await (ctx as D1ObjectState).configureReadReplication?.({ mode: "auto" });
+      const d1Ctx = ctx as D1ObjectState;
+      if (!d1Ctx.primaryStub) {
+        await d1Ctx.configureReadReplication?.({ mode: "auto" });
+      }
       ctx.storage.sql.exec(`
         CREATE TABLE IF NOT EXISTS posts (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -120,6 +132,14 @@ export class PostsDatabase extends DurableObject {
   ): Promise<D1ObjectMethodResponse> {
     const method = getCallableMethod(this, request.method);
 
+    if (this.shouldForwardToPrimary(request.method)) {
+      const response = await this.ctx.primaryStub?.runDrizzleObjectMethod?.(request);
+      if (!response) {
+        throw new Error("Primary D1 object does not implement runDrizzleObjectMethod");
+      }
+      return response;
+    }
+
     if (request.bookmark) {
       await this.ctx.storage.waitForBookmark?.(request.bookmark);
     }
@@ -128,6 +148,10 @@ export class PostsDatabase extends DurableObject {
     const bookmark = await this.ctx.storage.getCurrentBookmark?.();
 
     return { value, bookmark };
+  }
+
+  private shouldForwardToPrimary(methodName: string): boolean {
+    return this.ctx.primaryStub !== undefined && PostsDatabase.primaryMethods.includes(methodName);
   }
 }
 

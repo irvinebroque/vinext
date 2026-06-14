@@ -278,7 +278,7 @@ export default defineConfig({
           binding: "VINEXT_D1_BLOG",
           // Optional. Defaults to one object named "default".
           partitionBy: "hostname",
-          // Optional. POST/PUT/PATCH/DELETE route primary-only by default.
+          // Optional. These request classes route primary-only before object calls run.
           writes: {
             methods: ["POST", "PUT", "PATCH", "DELETE"],
             routes: ["/admin/**"],
@@ -334,7 +334,31 @@ export const blog = d1.blog as VinextD1DatabaseClient<BlogDatabase>;
 }
 ```
 
-`bookmark` defaults to cookie transport and vinext also sets `x-d1-bookmark` on responses that update it. Set `bookmark: "header"` for API-only flows, or `bookmark: false` if your object adapter owns consistency itself. `rpcMethod` defaults to `runDrizzleObjectMethod`, matching the Drizzle D1 object adapter, but other ORMs can expose the same `{ method, args, bookmark } -> { value, bookmark }` session shape and set `rpcMethod: "runD1ObjectMethod"` or another method name.
+With Drizzle's D1 object adapter, `source` can export a `DrizzleD1Object`. Vinext's request client uses the same `runDrizzleObjectMethod({ method, args, bookmark }) -> { value, bookmark }` envelope as Drizzle's `createD1ObjectSession()`, so application methods do not accept bookmark parameters:
+
+```ts
+// src/db/blog-object.ts
+import { DrizzleD1Object, d1PrimaryMethods, drizzle } from "drizzle-orm/d1-object";
+import * as schema from "./schema";
+
+export class BlogDatabase extends DrizzleD1Object<Env> {
+  static override readonly primaryMethods = d1PrimaryMethods<BlogDatabase>()("createPost");
+
+  db = drizzle(this.ctx, { schema });
+
+  async listPosts(options: { limit?: number } = {}) {
+    return this.db.query.posts.findMany({ limit: options.limit ?? 20 });
+  }
+
+  async createPost(input: { title: string }) {
+    return this.db.insert(schema.posts).values(input).returning().get();
+  }
+}
+```
+
+`writes` config routes known write requests to the primary object at the request boundary. Drizzle's `primaryMethods` handles write methods that are reached through a replica anyway.
+
+`bookmark` defaults to cookie transport and vinext also sets `x-d1-bookmark` on responses that update it. Set `bookmark: "header"` for API-only flows, or `bookmark: false` if your object adapter owns consistency itself. `rpcMethod` defaults to `runDrizzleObjectMethod`, matching the Drizzle D1 object adapter, but other ORMs can expose the same session envelope and set `rpcMethod: "runD1ObjectMethod"` or another method name.
 
 **Migrating from old D1 bindings:** replace route-level `env.DB` or `cloudflare:workers` D1 binding calls with methods on a D1 object client. The old model runs SQL from the Worker:
 
